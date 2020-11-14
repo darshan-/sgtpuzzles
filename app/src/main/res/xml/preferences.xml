@@ -53,7 +53,7 @@
 				<CheckBoxPreference android:title="@string/completedPrompt"
 									android:summary="@string/completedPromptSummary"
 									android:key="completedPrompt"
-									android:defaultValue="true" />
+									android:defaultValue="false" />
 				<CheckBoxPreference android:title="@string/fullscreen"
 									android:summary="@string/fullscreenSummary"
 									android:key="fullscreen"
@@ -61,7 +61,7 @@
 				<CheckBoxPreference android:title="@string/stayAwake"
 									android:summary="@string/stayAwakeSummary"
 									android:key="stayAwake"
-									android:defaultValue="false" />
+									android:defaultValue="true" />
 				<ListPreference android:title="@string/limitDpi"
 								android:key="limitDpi"
 								android:entryValues="@array/limitDpiModes"
@@ -76,7 +76,7 @@
 				<CheckBoxPreference android:title="@string/keyboardBorders"
 									android:summary="@string/keyboardBordersSummary"
 									android:key="keyboardBorders"
-									android:defaultValue="false" />
+									android:defaultValue="true" />
 			</PreferenceCategory>
 			<PreferenceCategory android:title="@string/mouseSettings">
 				<ListPreference android:title="@string/extMouseLongPress"
