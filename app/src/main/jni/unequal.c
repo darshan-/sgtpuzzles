@@ -52,12 +52,14 @@ enum {
     COL_GRID,
     COL_TEXT, COL_GUESS, COL_ERROR, COL_PENCIL,
     COL_HIGHLIGHT, COL_LOWLIGHT, COL_SPENT = COL_LOWLIGHT,
+    COL_BLACK, COL_WHITE,
     NCOLOURS
 };
 
 typedef enum {
     MODE_UNEQUAL,      /* Puzzle indicators are 'greater-than'. */
-    MODE_ADJACENT      /* Puzzle indicators are 'adjacent number'. */
+    MODE_ADJACENT,     /* Puzzle indicators are 'adjacent number'. */
+    MODE_KROPKI        /* Puzzle indicators are 'adjacent' and 'double' */
 } Mode;
 
 struct game_params {
@@ -80,8 +82,13 @@ struct game_params {
 #define F_SPENT_RIGHT   2048
 #define F_SPENT_DOWN    4096
 #define F_SPENT_LEFT    8192
+#define F_DBL_UP        16384
+#define F_DBL_RIGHT     32768
+#define F_DBL_DOWN      65536
+#define F_DBL_LEFT      131072
 
 #define ADJ_TO_SPENT(x) ((x) << 9)
+#define ADJ_TO_DOUBLE(x) ((x) << 13)
 
 #define F_ERROR_MASK (F_ERROR|F_ERROR_UP|F_ERROR_RIGHT|F_ERROR_DOWN|F_ERROR_LEFT)
 
@@ -145,7 +152,9 @@ static bool game_fetch_preset(int i, char **name, game_params **params)
     *ret = unequal_presets[i]; /* structure copy */
 
     sprintf(buf, "%s: %dx%d %s",
-            ret->mode == MODE_ADJACENT ? "Adjacent" : "Unequal",
+            ret->mode == MODE_KROPKI   ? "Kropki" : 
+            ret->mode == MODE_ADJACENT ? "Adjacent" : 
+                                         "Unequal",
             ret->order, ret->order,
             _(unequal_diffnames[ret->diff]));
 
@@ -183,7 +192,10 @@ static void decode_params(game_params *ret, char const *string)
     ret->order = atoi(p);
     while (*p && isdigit((unsigned char)*p)) p++;
 
-    if (*p == 'a') {
+    if (*p == 'k') {
+        p++;
+        ret->mode = MODE_KROPKI;
+    } else if (*p == 'a') {
         p++;
         ret->mode = MODE_ADJACENT;
     } else
@@ -208,7 +220,9 @@ static char *encode_params(const game_params *params, bool full)
     char ret[80];
 
     sprintf(ret, "%d", params->order);
-    if (params->mode == MODE_ADJACENT)
+    if (params->mode == MODE_KROPKI)
+        sprintf(ret + strlen(ret), "k");
+    else if (params->mode == MODE_ADJACENT)
         sprintf(ret + strlen(ret), "a");
     if (full)
         sprintf(ret + strlen(ret), "d%c", unequal_diffchars[params->diff]);
@@ -225,7 +239,7 @@ static config_item *game_configure(const game_params *params)
 
     ret[0].name = _("Mode");
     ret[0].type = C_CHOICES;
-    ret[0].u.choices.choicenames = _(":Unequal:Adjacent");
+    ret[0].u.choices.choicenames = _(":Unequal:Adjacent:Kropki");
     ret[0].u.choices.selected = params->mode;
 
     ret[1].name = _("Size (s*s)");
@@ -341,7 +355,33 @@ static bool check_num_adj(digit *grid, game_state *state,
         assert (n != 0);
         if (dn == 0) continue;
 
-        if (state->mode == MODE_ADJACENT) {
+        if (state->mode == MODE_KROPKI) {
+            int gd = abs(n-dn);
+            int id = (2*n == dn || 2*dn == n);
+            int ot = (n == 1 && dn == 2) || (n == 2 && dn == 1);
+            
+            if ((f & ADJ_TO_DOUBLE(adjthan[i].f)) && !id) {
+                debug(("check_adj error (%d,%d):%d should be * (%d,%d):%d",
+                       x, y, n, x+dx, y+dy, dn));
+                if (me) GRID(state, flags, x, y) |= adjthan[i].fe;
+                ret = false;
+            }
+            else if ((f & adjthan[i].f) && (gd != 1 && !ot)) {
+                debug(("check_adj error (%d,%d):%d should be O (%d,%d):%d",
+                       x, y, n, x+dx, y+dy, dn));
+                if (me) GRID(state, flags, x, y) |= adjthan[i].fe;
+                ret = false;
+            }
+            else if (!(f & adjthan[i].f) && 
+                     !(f & ADJ_TO_DOUBLE(adjthan[i].f)) && 
+                      (id || (gd == 1))) {
+                debug(("check_adj error (%d,%d):%d should be neither * or O (%d,%d):%d",
+                       x, y, n, x+dx, y+dy, dn));
+                if (me) GRID(state, flags, x, y) |= adjthan[i].fe;
+                ret = false;
+            }
+            
+        } else if (state->mode == MODE_ADJACENT) {
             int gd = abs(n-dn);
 
             if ((f & adjthan[i].f) && (gd != 1)) {
@@ -479,7 +519,14 @@ static char *game_text_format(const game_state *state)
             *p++ = n > 0 ? n2c(n, state->order) : '.';
 
             if (x < (state->order-1)) {
-                if (state->mode == MODE_ADJACENT) {
+                if (state->mode == MODE_KROPKI) {
+                    if (GRID(state, flags, x, y) & F_DBL_RIGHT) 
+                        *p++ = '*';
+                    else if (GRID(state, flags, x, y) & F_ADJ_RIGHT)
+                        *p++ = '@';
+                    else
+                        *p++ = ' ';
+                } else if (state->mode == MODE_ADJACENT) {
                     *p++ = (GRID(state, flags, x, y) & F_ADJ_RIGHT) ? '|' : ' ';
                 } else {
                     if (GRID(state, flags, x, y) & F_ADJ_RIGHT)
@@ -495,7 +542,14 @@ static char *game_text_format(const game_state *state)
 
         if (y < (state->order-1)) {
             for (x = 0; x < state->order; x++) {
-                if (state->mode == MODE_ADJACENT) {
+                if (state->mode == MODE_KROPKI) {
+                    if (GRID(state, flags, x, y) & F_DBL_DOWN)
+                        *p++ = '*';
+                    else if (GRID(state, flags, x, y) & F_ADJ_DOWN)
+                        *p++ = '@';
+                    else
+                        *p++ = ' ';
+                } else if (state->mode == MODE_ADJACENT) {
                     *p++ = (GRID(state, flags, x, y) & F_ADJ_DOWN) ? '-' : ' ';
                 } else {
                     if (GRID(state, flags, x, y) & F_ADJ_DOWN)
@@ -571,8 +625,8 @@ static struct solver_ctx *new_ctx(game_state *state)
     ctx->links = NULL;
     ctx->state = state;
 
-    if (state->mode == MODE_ADJACENT)
-        return ctx; /* adjacent mode doesn't use links. */
+    if (state->mode != MODE_UNEQUAL)
+        return ctx; /* adjacent and kropki mode don't use links. */
 
     for (x = 0; x < o; x++) {
         for (y = 0; y < o; y++) {
@@ -692,11 +746,14 @@ static int solver_adjacent(struct latin_solver *solver, void *vctx)
             if (grid(x, y) == 0) continue;
 
             /* We have a definite number here. Make sure that any
-             * adjacent possibles reflect the adjacent/non-adjacent clue. */
+             * adjacent possibles reflect the adjacent/non-adjacent clue.
+             * For Kropki puzzles, additionally check double/non-double clues. */
 
             for (i = 0; i < 4; i++) {
                 bool isadjacent =
                     (GRID(ctx->state, flags, x, y) & adjthan[i].f);
+                bool isdouble   = 
+                    (GRID(ctx->state, flags, x, y) & ADJ_TO_DOUBLE(adjthan[i].f));
 
                 nx = x + adjthan[i].dx, ny = y + adjthan[i].dy;
                 if (nx < 0 || ny < 0 || nx >= o || ny >= o)
@@ -706,17 +763,33 @@ static int solver_adjacent(struct latin_solver *solver, void *vctx)
                     /* Continue past numbers the adjacent square _could_ be,
                      * given the clue we have. */
                     gd = abs((n+1) - grid(x, y));
-                    if (isadjacent && (gd == 1)) continue;
-                    if (!isadjacent && (gd != 1)) continue;
+                    if (ctx->state->mode == MODE_KROPKI) {
+                        int ot = ( (n+1) == 1 && grid(x,y) == 2) || ( (n+1) == 2 && grid(x,y) == 1);    
+                        int dbl = ( (n+1)*2 == grid(x,y) || (n+1) == 2*grid(x,y) );
+                        if (ot && (isdouble || isadjacent)) continue;
+                        if (isdouble && dbl) continue;
+                        if (!isdouble && isadjacent && (gd == 1)) continue;
+                        if (!isdouble && !isadjacent && !dbl && (gd != 1)) continue;
+                    } else if (ctx->state->mode == MODE_ADJACENT) {
+                        if (isadjacent && (gd == 1)) continue;
+                        if (!isadjacent && (gd != 1)) continue;
+                    }
 
                     if (!cube(nx, ny, n+1))
                         continue; /* already discounted this possibility. */
 
 #ifdef STANDALONE_SOLVER
                     if (solver_show_working) {
-                        printf("%*sadjacent elimination, (%d,%d):%d %s (%d,%d):\n",
-                               solver_recurse_depth*4, "",
-                               x+1, y+1, grid(x, y), isadjacent ? "|" : "!|", nx+1, ny+1);
+                        if (ctx->state->mode == MODE_KROPKI)
+                            printf("%*skropki elimination, (%d,%d):%d %s (%d,%d):\n",
+                                   solver_recurse_depth*4, "",
+                                   x+1, y+1, grid(x, y), 
+                                   isadjacent ? "O" : 
+                                   isdouble ? "*": "!O*", nx+1, ny+1);
+                        else 
+                            printf("%*sadjacent elimination, (%d,%d):%d %s (%d,%d):\n",
+                                   solver_recurse_depth*4, "",
+                                   x+1, y+1, grid(x, y), isadjacent ? "|" : "!|", nx+1, ny+1);
                         printf("%*s  ruling out %d at (%d,%d)\n",
                                solver_recurse_depth*4, "", n+1, nx+1, ny+1);
                     }
@@ -738,13 +811,16 @@ static int solver_adjacent_set(struct latin_solver *solver, void *vctx)
     int nchanged = 0, *scratch = snewn(o, int);
 
     /* Update possible values based on other possible values
-     * of adjacent squares, and adjacency clues. */
+     * of adjacent squares, and adjacency clues.
+     * and also double clues in kropki mode */
 
     for (x = 0; x < o; x++) {
         for (y = 0; y < o; y++) {
             for (i = 0; i < 4; i++) {
                 bool isadjacent =
                     (GRID(ctx->state, flags, x, y) & adjthan[i].f);
+                bool isdouble   = 
+                    (GRID(ctx->state, flags, x, y) & ADJ_TO_DOUBLE(adjthan[i].f));
 
                 nx = x + adjthan[i].dx, ny = y + adjthan[i].dy;
                 if (nx < 0 || ny < 0 || nx >= o || ny >= o)
@@ -764,8 +840,17 @@ static int solver_adjacent_set(struct latin_solver *solver, void *vctx)
                         if (n == nn) continue;
 
                         gd = abs(nn - n);
-                        if (isadjacent && (gd != 1)) continue;
-                        if (!isadjacent && (gd == 1)) continue;
+                        if (ctx->state->mode == MODE_KROPKI) {
+                            int ot = (nn == 1 && n == 2) || (nn == 2 && n == 1);
+                            int dbl = ( ((nn+1)*2 == (n+1)) || ((nn+1) == 2*(n+1)) );
+                            if (ot && !(isdouble || isadjacent)) continue;
+                            if (isdouble && !dbl) continue;
+                            if (!isdouble && isadjacent && (gd != 1)) continue;
+                            if (!isdouble && !isadjacent && (dbl || (gd == 1)) ) continue;
+                        } else if (ctx->state->mode == MODE_ADJACENT) {
+                            if (isadjacent && (gd != 1)) continue;
+                            if (!isadjacent && (gd == 1)) continue;
+                        }
 
                         scratch[nn] = 1;
                     }
@@ -779,9 +864,16 @@ static int solver_adjacent_set(struct latin_solver *solver, void *vctx)
 
 #ifdef STANDALONE_SOLVER
                     if (solver_show_working) {
-                        printf("%*sadjacent possible elimination, (%d,%d) %s (%d,%d):\n",
-                               solver_recurse_depth*4, "",
-                               x+1, y+1, isadjacent ? "|" : "!|", nx+1, ny+1);
+                        if (ctx->state->mode == MODE_KROPKI)
+                            printf("%*skropki elimination, (%d,%d):%d %s (%d,%d):\n",
+                                   solver_recurse_depth*4, "",
+                                   x+1, y+1, grid(x, y), 
+                                   isadjacent ? "O" : 
+                                   isdouble ? "*": "!O*", nx+1, ny+1);
+                        else
+                            printf("%*sadjacent possible elimination, (%d,%d) %s (%d,%d):\n",
+                                   solver_recurse_depth*4, "",
+                                   x+1, y+1, isadjacent ? "|" : "!|", nx+1, ny+1);
                         printf("%*s  ruling out %d at (%d,%d)\n",
                                solver_recurse_depth*4, "", n+1, nx+1, ny+1);
                     }
@@ -817,6 +909,74 @@ static int solver_set(struct latin_solver *solver, void *vctx)
 #define SOLVER(upper,title,func,lower) func,
 static usersolver_t const unequal_solvers[] = { DIFFLIST(SOLVER) };
 
+static bool unequal_valid(struct latin_solver *solver, void *vctx)
+{
+    struct solver_ctx *ctx = (struct solver_ctx *)vctx;
+    if (ctx->state->mode == MODE_ADJACENT) {
+        int o = solver->o;
+        int x, y, nx, ny, v, nv, i;
+
+        for (x = 0; x+1 < o; x++) {
+            for (y = 0; y+1 < o; y++) {
+                v = grid(x, y);
+                for (i = 0; i < 4; i++) {
+                    bool is_adj, should_be_adj;
+
+                    should_be_adj =
+                        (GRID(ctx->state, flags, x, y) & adjthan[i].f);
+
+                    nx = x + adjthan[i].dx, ny = y + adjthan[i].dy;
+                    if (nx < 0 || ny < 0 || nx >= o || ny >= o)
+                        continue;
+
+                    nv = grid(nx, ny);
+                    is_adj = (labs(v - nv) == 1);
+
+                    if (is_adj && !should_be_adj) {
+#ifdef STANDALONE_SOLVER
+                        if (solver_show_working)
+                            printf("%*s(%d,%d):%d and (%d,%d):%d have "
+                                   "adjacent values, but should not\n",
+                                   solver_recurse_depth*4, "",
+                                   x+1, y+1, v, nx+1, ny+1, nv);
+#endif
+                        return false;
+                    }
+
+                    if (!is_adj && should_be_adj) {
+#ifdef STANDALONE_SOLVER
+                        if (solver_show_working)
+                            printf("%*s(%d,%d):%d and (%d,%d):%d do not have "
+                                   "adjacent values, but should\n",
+                                   solver_recurse_depth*4, "",
+                                   x+1, y+1, v, nx+1, ny+1, nv);
+#endif
+                        return false;
+                    }
+                }
+            }
+        }
+    } else {
+        int i;
+        for (i = 0; i < ctx->nlinks; i++) {
+            struct solver_link *link = &ctx->links[i];
+            int gv = grid(link->gx, link->gy);
+            int lv = grid(link->lx, link->ly);
+            if (gv <= lv) {
+#ifdef STANDALONE_SOLVER
+                if (solver_show_working)
+                    printf("%*s(%d,%d):%d should be greater than (%d,%d):%d, "
+                           "but is not\n", solver_recurse_depth*4, "",
+                           link->gx+1, link->gy+1, gv,
+                           link->lx+1, link->ly+1, lv);
+#endif
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static int solver_state(game_state *state, int maxdiff)
 {
     struct solver_ctx *ctx = new_ctx(state);
@@ -825,6 +985,7 @@ static int solver_state(game_state *state, int maxdiff)
 
     latin_solver_alloc(&solver, state->nums, state->order);
 
+    // Darshan: Here, unequal_valid would be added, so laton_solver_main would need to accept it...
     diff = latin_solver_main(&solver, maxdiff,
 			     DIFF_LATIN, DIFF_SET, DIFF_EXTREME,
 			     DIFF_EXTREME, DIFF_RECURSIVE,
@@ -904,8 +1065,8 @@ static bool gg_place_clue(game_state *state, int ccode, digit *latin, bool check
     } else {                    /* add flag */
         int lx, ly, lloc;
 
-        if (state->mode == MODE_ADJACENT)
-            return false; /* never add flag clues in adjacent mode
+        if (state->mode != MODE_UNEQUAL)
+            return false; /* never add flag clues in adjacent or kropki mode
                              (they're always all present) */
 
         if (state->flags[loc] & adjthan[which].f)
@@ -948,8 +1109,8 @@ static bool gg_remove_clue(game_state *state, int ccode, bool checkonly)
             state->nums[loc] = 0;
         }
     } else {                    /* remove flag */
-        if (state->mode == MODE_ADJACENT)
-            return false; /* never remove clues in adjacent mode. */
+        if (state->mode != MODE_UNEQUAL)
+            return false; /* never remove clues in adjacent or kropki mode. */
 
         if (!(state->flags[loc] & adjthan[which].f)) return false;
         if (!checkonly) {
@@ -1008,7 +1169,8 @@ static int gg_best_clue(game_state *state, int *scratch, digit *latin)
 int maxtries;
 #define MAXTRIES maxtries
 #else
-#define MAXTRIES 50
+// Kropki 100, original 50:
+#define MAXTRIES 100
 #endif
 static int gg_solved;
 
@@ -1089,6 +1251,58 @@ static void game_strip(game_state *new, int *scratch, digit *latin,
 #endif
 }
 
+static void add_kropki_flags(game_state *state, digit *latin, random_state *rs)
+{
+    int x, y, o = state->order;
+    int lay_double;
+    int lay_adjacent;
+
+    /* All clues in kropki mode are always present (the only variables are
+     * the numbers). This adds all the flags to state based on the supplied
+     * latin square. */
+
+    for (y = 0; y < o; y++) {
+        for (x = 0; x < o; x++) {
+            int gi, gc;
+
+            gi = latin[y*o+x];
+            if (x < (o-1)) {
+                gc = latin[y*o+x+1];
+                lay_double = (2*gi == gc || 2*gc == gi);
+                lay_adjacent = (abs(gi - gc) == 1);
+                if ((gi == 1 && gc == 2) || (gi == 2 && gc == 1)) {
+                    lay_double = (random_upto(rs, 2) == 0);
+                    lay_adjacent = !lay_double;
+                }
+                if (lay_double) {
+                    GRID(state, flags, x, y) |= F_DBL_RIGHT;
+                    GRID(state, flags, x+1, y) |= F_DBL_LEFT;
+                } else if (lay_adjacent) {
+                    GRID(state, flags, x, y) |= F_ADJ_RIGHT;
+                    GRID(state, flags, x+1, y) |= F_ADJ_LEFT;
+                }
+            }
+
+            if (y < (o-1)) {
+                gc = latin[(y+1)*o+x];
+                lay_double = (2*gi == gc || 2*gc == gi);
+                lay_adjacent = (abs(gi - gc) == 1);
+                if ((gi == 1 && gc == 2) || (gi == 2 && gc == 1)) {
+                    lay_double = (random_upto(rs, 2) == 0);
+                    lay_adjacent = !lay_double;
+                }
+                if (lay_double) {
+                    GRID(state, flags, x, y) |= F_DBL_DOWN;
+                    GRID(state, flags, x, y+1) |= F_DBL_UP;
+                } else if (lay_adjacent) {
+                    GRID(state, flags, x, y) |= F_ADJ_DOWN;
+                    GRID(state, flags, x, y+1) |= F_ADJ_UP;
+                }
+            }
+        }
+    }
+}
+
 static void add_adjacent_flags(game_state *state, digit *latin)
 {
     int x, y, o = state->order;
@@ -1144,7 +1358,11 @@ generate:
     memset(state->nums, 0, o2 * sizeof(digit));
     memset(state->flags, 0, o2 * sizeof(unsigned int));
 
-    if (state->mode == MODE_ADJACENT) {
+    if (state->mode == MODE_KROPKI) {
+        /* All kropki flags are always present. */
+        add_kropki_flags(state, sq, rs);
+    }
+    else if (state->mode == MODE_ADJACENT) {
         /* All adjacency flags are always present. */
         add_adjacent_flags(state, sq);
     }
@@ -1188,10 +1406,14 @@ generate:
             unsigned int f = GRID(state, flags, x, y);
             k = sprintf(buf, "%d%s%s%s%s,",
                         GRID(state, nums, x, y),
-                        (f & F_ADJ_UP)    ? "U" : "",
-                        (f & F_ADJ_RIGHT) ? "R" : "",
-                        (f & F_ADJ_DOWN)  ? "D" : "",
-                        (f & F_ADJ_LEFT)  ? "L" : "");
+                        (f & F_DBL_UP)    ? "*U" : 
+                        (f & F_ADJ_UP)    ?  "U" : "",
+                        (f & F_DBL_RIGHT) ? "*R" : 
+                        (f & F_ADJ_RIGHT) ?  "R" : "",
+                        (f & F_DBL_DOWN)  ? "*D" : 
+                        (f & F_ADJ_DOWN)  ?  "D" : "",
+                        (f & F_DBL_LEFT)  ? "*L" : 
+                        (f & F_ADJ_LEFT)  ?  "L" : "");
 
             ret = sresize(ret, retlen + k + 1, char);
             strcpy(ret + retlen, buf);
@@ -1214,6 +1436,7 @@ static game_state *load_game(const game_params *params, const char *desc,
     const char *p = desc;
     int i = 0, n, o = params->order, x, y;
     const char *why = NULL;
+    bool dbl = false;
 
     while (*p) {
         while (*p >= 'a' && *p <= 'z') {
@@ -1237,12 +1460,24 @@ static game_state *load_game(const game_params *params, const char *desc,
         if (state->nums[i] != 0)
             state->flags[i] |= F_IMMUTABLE; /* === number set by game description */
 
-        while (*p == 'U' || *p == 'R' || *p == 'D' || *p == 'L') {
+        while (*p == 'U' || *p == 'R' || *p == 'D' || *p == 'L' || *p == '*') {
             switch (*p) {
-            case 'U': state->flags[i] |= F_ADJ_UP;    break;
-            case 'R': state->flags[i] |= F_ADJ_RIGHT; break;
-            case 'D': state->flags[i] |= F_ADJ_DOWN;  break;
-            case 'L': state->flags[i] |= F_ADJ_LEFT;  break;
+            case '*': if (params->mode != MODE_KROPKI) {
+                      why = _("Double flag * in non-kropki game description");
+                        goto fail;
+                      } else if (dbl) {
+                      why = _("Multiple * double flag in kropki game description");
+                        goto fail;
+                      }
+                      dbl = true; break;
+            case 'U': state->flags[i] |= dbl ? F_DBL_UP    : F_ADJ_UP;
+                      dbl = false; break;
+            case 'R': state->flags[i] |= dbl ? F_DBL_RIGHT : F_ADJ_RIGHT;
+                      dbl = false; break;
+            case 'D': state->flags[i] |= dbl ? F_DBL_DOWN  : F_ADJ_DOWN;
+                      dbl = false; break;
+            case 'L': state->flags[i] |= dbl ? F_DBL_LEFT  : F_ADJ_LEFT;
+                      dbl = false; break;
             default: why = _("Expecting flag URDL in game description"); goto fail;
             }
             p++;
@@ -1260,14 +1495,27 @@ static game_state *load_game(const game_params *params, const char *desc,
     for (y = 0; y < o; y++) {
         for (x = 0; x < o; x++) {
             for (n = 0; n < 4; n++) {
-                if (GRID(state, flags, x, y) & adjthan[n].f) {
+                int nx = x + adjthan[n].dx;
+                int ny = y + adjthan[n].dy;
+                if (GRID(state, flags, x, y) & ADJ_TO_DOUBLE(adjthan[n].f)) {
+                    if (params-> mode != MODE_KROPKI) {
+                        why = _("Double flags are only allowed in Kropki mode"); goto fail;
+                    }
+                    /* a flag must not point us off the grid. */
+                    if (nx < 0 || ny < 0 || nx >= o || ny >= o) {
+                        why = _("Flags go off grid"); goto fail;
+                    }
+                    if (!(GRID(state, flags, nx, ny) & ADJ_TO_DOUBLE(adjthan[n].fo))) {
+                        why = _("Double flags contradicting each other"); goto fail;
+                    }
+                } else if (GRID(state, flags, x, y) & adjthan[n].f) {
                     int nx = x + adjthan[n].dx;
                     int ny = y + adjthan[n].dy;
                     /* a flag must not point us off the grid. */
                     if (nx < 0 || ny < 0 || nx >= o || ny >= o) {
                         why = _("Flags go off grid"); goto fail;
                     }
-                    if (params->mode == MODE_ADJACENT) {
+                    if (params->mode != MODE_UNEQUAL) {
                         /* if one cell is adjacent to another, the other must
                          * also be adjacent to the first. */
                         if (!(GRID(state, flags, nx, ny) & adjthan[n].fo)) {
@@ -1457,18 +1705,24 @@ static char *interpret_move(const game_state *state, game_ui *ui,
 	    return NULL;
 
 	if (oy - COORD(y) > TILE_SIZE) {
-	    if (GRID(state, flags, x, y) & F_ADJ_DOWN)
+	    if ((GRID(state, flags, x, y) & F_ADJ_DOWN) ||
+                (GRID(state, flags, x, y) & F_DBL_DOWN))
 		sprintf(buf, "F%d,%d,%d", x, y, F_SPENT_DOWN);
-	    else if (y + 1 < ds->order && GRID(state, flags, x, y + 1) & F_ADJ_UP)
+	    else if (y + 1 < ds->order && 
+	        ((GRID(state, flags, x, y + 1) & F_ADJ_UP) ||
+                 (GRID(state, flags, x, y + 1) & F_DBL_UP)))
 		sprintf(buf, "F%d,%d,%d", x, y + 1, F_SPENT_UP);
 	    else return NULL;
 	    return dupstr(buf);
 	}
 
 	if (ox - COORD(x) > TILE_SIZE) {
-	    if (GRID(state, flags, x, y) & F_ADJ_RIGHT)
+	    if ((GRID(state, flags, x, y) & F_ADJ_RIGHT) ||
+                (GRID(state, flags, x, y) & F_DBL_RIGHT))
 		sprintf(buf, "F%d,%d,%d", x, y, F_SPENT_RIGHT);
-	    else if (x + 1 < ds->order && GRID(state, flags, x + 1, y) & F_ADJ_LEFT)
+	    else if (x + 1 < ds->order && 
+	        ((GRID(state, flags, x + 1, y) & F_ADJ_LEFT) ||
+                 (GRID(state, flags, x + 1, y) & F_DBL_LEFT)))
 		sprintf(buf, "F%d,%d,%d", x + 1, y, F_SPENT_LEFT);
 	    else return NULL;
 	    return dupstr(buf);
@@ -1562,7 +1816,7 @@ static char *interpret_move(const game_state *state, game_ui *ui,
 		  GRID(state, flags, nx,     ny    ) & adjthan[i].fo))
 		return UI_UPDATE; /* no clue to toggle */
 
-	    if (state->mode == MODE_ADJACENT)
+	    if (state->mode != MODE_UNEQUAL)
 		self = (adjthan[i].dx >= 0 && adjthan[i].dy >= 0);
 	    else
 		self = (GRID(state, flags, ui->hx, ui->hy) & adjthan[i].f);
@@ -1735,6 +1989,14 @@ static float *game_colours(frontend *fe, int *ncolours)
     ret[COL_PENCIL * 3 + 1] = 0.5F * ret[COL_BACKGROUND * 3 + 1];
     ret[COL_PENCIL * 3 + 2] = ret[COL_BACKGROUND * 3 + 2];
 
+    ret[COL_BLACK * 3 + 0] = 0.0F;
+    ret[COL_BLACK * 3 + 1] = 0.0F;
+    ret[COL_BLACK * 3 + 2] = 0.0F;
+
+    ret[COL_WHITE * 3 + 0] = 1.0F;
+    ret[COL_WHITE * 3 + 1] = 1.0F;
+    ret[COL_WHITE * 3 + 2] = 1.0F;
+
     *ncolours = NCOLOURS;
     return ret;
 }
@@ -1794,6 +2056,8 @@ static void draw_gt(drawing *dr, int ox, int oy,
 
 #define COLOUR(direction) (f & (F_ERROR_##direction) ? COL_ERROR : \
 			   f & (F_SPENT_##direction) ? COL_SPENT : fg)
+#define COLOUR2(direction) (f & (F_ERROR_##direction) ? COL_BACKGROUND : \
+                f & (F_SPENT_##direction) ? COL_BACKGROUND : fg2)
 
 static void draw_gts(drawing *dr, game_drawstate *ds, int ox, int oy,
                      unsigned int f, int bg, int fg)
@@ -1859,6 +2123,49 @@ static void draw_adjs(drawing *dr, game_drawstate *ds, int ox, int oy,
     draw_update(dr, ox, oy+TILE_SIZE, TILE_SIZE, g);
 }
 
+static void draw_krps(drawing *dr, game_drawstate *ds, int ox, int oy,
+                      unsigned long f, int bg, int fg, int fg2)
+{
+    int g = GAP_SIZE, g38 = 3*(g+1)/8, g4 = (g+1)/4, g2=(g+1)/2;
+
+    /* Draw all the adjacency bars relevant to this tile; we only have
+     * to worry about F_ADJ_RIGHT and F_ADJ_DOWN / F_ADJ_RIGHT_W and F_ADJ_DOWN_W.
+     *
+     * If we _only_ have the error flag set (i.e. it's not supposed to be
+     * either double or adjacent we draw a red bar.
+     */
+
+    if (f & (F_ADJ_RIGHT|F_DBL_RIGHT|F_ERROR_RIGHT)) {
+        if (f & F_DBL_RIGHT) {
+            draw_circle(dr, ox+TILE_SIZE+g2, oy+TILE_SIZE/2, g4, 
+                 COLOUR(RIGHT), COLOUR(RIGHT));
+        } else if (f & F_ADJ_RIGHT) {
+            draw_circle(dr, ox+TILE_SIZE+g2, oy+TILE_SIZE/2, g4, 
+                 COLOUR2(RIGHT), COLOUR(RIGHT));
+        } else {
+            draw_rect(dr, ox+TILE_SIZE+g38, oy, g4, TILE_SIZE, COL_ERROR);
+        }    
+    } else if (bg >= 0) {
+        draw_rect(dr, ox+TILE_SIZE+g38, oy, g4, TILE_SIZE, bg);
+    }
+    draw_update(dr, ox+TILE_SIZE, oy, g, TILE_SIZE);
+
+    if (f & (F_ADJ_DOWN|F_DBL_DOWN|F_ERROR_DOWN)) {
+        if (f & F_DBL_DOWN) {
+            draw_circle(dr, ox+TILE_SIZE/2, oy+TILE_SIZE+g2, g4, 
+                 COLOUR(DOWN), COLOUR(DOWN));
+        } else if (f & F_ADJ_DOWN) {
+            draw_circle(dr, ox+TILE_SIZE/2, oy+TILE_SIZE+g2, g4, 
+                 COLOUR2(DOWN), COLOUR(DOWN));
+        } else {
+            draw_rect(dr, ox, oy+TILE_SIZE+g38, TILE_SIZE, g4, COL_ERROR);
+        }
+    } else if (bg >= 0) {
+        draw_rect(dr, ox, oy+TILE_SIZE+g38, TILE_SIZE, g4, bg);
+    }
+    draw_update(dr, ox, oy+TILE_SIZE, TILE_SIZE, g);
+}
+
 static void draw_furniture(drawing *dr, game_drawstate *ds,
                            const game_state *state, const game_ui *ui,
                            int x, int y, bool hflash)
@@ -1893,7 +2200,9 @@ static void draw_furniture(drawing *dr, game_drawstate *ds,
     draw_update(dr, ox, oy, TILE_SIZE, TILE_SIZE);
 
     /* Draw the adjacent clue signs. */
-    if (ds->mode == MODE_ADJACENT)
+    if (ds->mode == MODE_KROPKI)
+        draw_krps(dr, ds, ox, oy, f, COL_BACKGROUND, COL_BLACK, COL_WHITE);
+    else if (ds->mode == MODE_ADJACENT)
         draw_adjs(dr, ds, ox, oy, f, COL_BACKGROUND, COL_GRID);
     else
         draw_gts(dr, ds, ox, oy, f, COL_BACKGROUND, COL_TEXT);
@@ -2280,7 +2589,9 @@ static void soak(game_params *p, random_state *rs)
     tt_start = tt_now = time(NULL);
 
     printf("Soak-generating an %s %dx%d grid, difficulty %s.\n",
-           p->mode == MODE_ADJACENT ? "adjacent" : "unequal",
+           p->mode == MODE_KROPKI   ? "kropki" :
+           p->mode == MODE_ADJACENT ? "adjacent" : 
+                                      "unequal",
            p->order, p->order, unequal_diffnames[p->diff]);
 
     while (1) {
