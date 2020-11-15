@@ -35,7 +35,8 @@
 #define PREFERRED_TILE_SIZE 32
 
 #define TILE_SIZE (ds->tilesize)
-#define GAP_SIZE  (TILE_SIZE/2)
+//#define GAP_SIZE  (TILE_SIZE/2)
+#define GAP_SIZE 0
 #define SQUARE_SIZE (TILE_SIZE + GAP_SIZE)
 
 #define BORDER    (TILE_SIZE / 2)
@@ -137,7 +138,8 @@ static const struct game_params unequal_presets[] = {
     {  6, DIFF_EXTREME, 0 },
     {  7, DIFF_SET,     0 },
     {  7, DIFF_SET,     1 },
-    {  7, DIFF_EXTREME, 0 }
+    {  7, DIFF_EXTREME, 0 },
+    {  7, DIFF_SET,     2 }
 };
 
 static bool game_fetch_preset(int i, char **name, game_params **params)
@@ -908,74 +910,6 @@ static int solver_set(struct latin_solver *solver, void *vctx)
 
 #define SOLVER(upper,title,func,lower) func,
 static usersolver_t const unequal_solvers[] = { DIFFLIST(SOLVER) };
-
-static bool unequal_valid(struct latin_solver *solver, void *vctx)
-{
-    struct solver_ctx *ctx = (struct solver_ctx *)vctx;
-    if (ctx->state->mode == MODE_ADJACENT) {
-        int o = solver->o;
-        int x, y, nx, ny, v, nv, i;
-
-        for (x = 0; x+1 < o; x++) {
-            for (y = 0; y+1 < o; y++) {
-                v = grid(x, y);
-                for (i = 0; i < 4; i++) {
-                    bool is_adj, should_be_adj;
-
-                    should_be_adj =
-                        (GRID(ctx->state, flags, x, y) & adjthan[i].f);
-
-                    nx = x + adjthan[i].dx, ny = y + adjthan[i].dy;
-                    if (nx < 0 || ny < 0 || nx >= o || ny >= o)
-                        continue;
-
-                    nv = grid(nx, ny);
-                    is_adj = (labs(v - nv) == 1);
-
-                    if (is_adj && !should_be_adj) {
-#ifdef STANDALONE_SOLVER
-                        if (solver_show_working)
-                            printf("%*s(%d,%d):%d and (%d,%d):%d have "
-                                   "adjacent values, but should not\n",
-                                   solver_recurse_depth*4, "",
-                                   x+1, y+1, v, nx+1, ny+1, nv);
-#endif
-                        return false;
-                    }
-
-                    if (!is_adj && should_be_adj) {
-#ifdef STANDALONE_SOLVER
-                        if (solver_show_working)
-                            printf("%*s(%d,%d):%d and (%d,%d):%d do not have "
-                                   "adjacent values, but should\n",
-                                   solver_recurse_depth*4, "",
-                                   x+1, y+1, v, nx+1, ny+1, nv);
-#endif
-                        return false;
-                    }
-                }
-            }
-        }
-    } else {
-        int i;
-        for (i = 0; i < ctx->nlinks; i++) {
-            struct solver_link *link = &ctx->links[i];
-            int gv = grid(link->gx, link->gy);
-            int lv = grid(link->lx, link->ly);
-            if (gv <= lv) {
-#ifdef STANDALONE_SOLVER
-                if (solver_show_working)
-                    printf("%*s(%d,%d):%d should be greater than (%d,%d):%d, "
-                           "but is not\n", solver_recurse_depth*4, "",
-                           link->gx+1, link->gy+1, gv,
-                           link->lx+1, link->ly+1, lv);
-#endif
-                return false;
-            }
-        }
-    }
-    return true;
-}
 
 static int solver_state(game_state *state, int maxdiff)
 {
@@ -1989,9 +1923,9 @@ static float *game_colours(frontend *fe, int *ncolours)
     ret[COL_PENCIL * 3 + 1] = 0.5F * ret[COL_BACKGROUND * 3 + 1];
     ret[COL_PENCIL * 3 + 2] = ret[COL_BACKGROUND * 3 + 2];
 
-    ret[COL_BLACK * 3 + 0] = 0.0F;
-    ret[COL_BLACK * 3 + 1] = 0.0F;
-    ret[COL_BLACK * 3 + 2] = 0.0F;
+    ret[COL_BLACK * 3 + 0] = 0.2F;
+    ret[COL_BLACK * 3 + 1] = 0.2F;
+    ret[COL_BLACK * 3 + 2] = 0.8F;
 
     ret[COL_WHITE * 3 + 0] = 1.0F;
     ret[COL_WHITE * 3 + 1] = 1.0F;
@@ -2126,7 +2060,9 @@ static void draw_adjs(drawing *dr, game_drawstate *ds, int ox, int oy,
 static void draw_krps(drawing *dr, game_drawstate *ds, int ox, int oy,
                       unsigned long f, int bg, int fg, int fg2)
 {
-    int g = GAP_SIZE, g38 = 3*(g+1)/8, g4 = (g+1)/4, g2=(g+1)/2;
+    //int g = GAP_SIZE, g38 = 3*(g+1)/8, g4 = (g+1)/4, g2=(g+1)/2;
+    //int g = (TILE_SIZE/2), g38 = 3*(g+1)/8, g4 = (g+1)/4, g2=(g+1)/2;
+    int g = GAP_SIZE, gp = (TILE_SIZE/2), g38 = 3*(g+1)/8, g4 = (gp+1)/4, g2=(g+1)/2;
 
     /* Draw all the adjacency bars relevant to this tile; we only have
      * to worry about F_ADJ_RIGHT and F_ADJ_DOWN / F_ADJ_RIGHT_W and F_ADJ_DOWN_W.
