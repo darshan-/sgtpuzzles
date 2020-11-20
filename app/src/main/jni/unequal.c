@@ -111,6 +111,7 @@ struct game_state {
     A(LATIN,Trivial,NULL,t)       \
     A(EASY,Easy,solver_easy, e)   \
     A(SET,Tricky,solver_set, k)   \
+    A(SETK,,solver_set, k)   \
     A(EXTREME,Extreme,NULL,x)     \
     A(RECURSIVE,Recursive,NULL,r)
 /* _("Trivial"), _("Easy"), _("Tricky"), _("Extreme"), _("Recursive") */
@@ -127,6 +128,10 @@ static char const unequal_diffchars[] = DIFFLIST(ENCODE);
 #define DEFAULT_PRESET 0
 
 static const struct game_params unequal_presets[] = {
+    {  6, DIFF_SETK,     2 },
+    {  7, DIFF_SETK,     2 },
+    {  8, DIFF_SETK,     2 },
+    {  9, DIFF_SETK,     2 },
     {  4, DIFF_EASY,    0 },
     {  5, DIFF_EASY,    0 },
     {  5, DIFF_SET,     0 },
@@ -138,8 +143,7 @@ static const struct game_params unequal_presets[] = {
     {  6, DIFF_EXTREME, 0 },
     {  7, DIFF_SET,     0 },
     {  7, DIFF_SET,     1 },
-    {  7, DIFF_EXTREME, 0 },
-    {  6, DIFF_SET,     2 }
+    {  7, DIFF_EXTREME, 0 }
 };
 
 static bool game_fetch_preset(int i, char **name, game_params **params)
