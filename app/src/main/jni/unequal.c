@@ -35,8 +35,7 @@
 #define PREFERRED_TILE_SIZE 32
 
 #define TILE_SIZE (ds->tilesize)
-//#define GAP_SIZE  (TILE_SIZE/2)
-#define GAP_SIZE 0
+#define GAP_SIZE (ds->mode == MODE_KROPKI ? 0 : TILE_SIZE/2)
 #define SQUARE_SIZE (TILE_SIZE + GAP_SIZE)
 
 #define BORDER    (TILE_SIZE / 2)
@@ -1894,9 +1893,10 @@ static void game_compute_size(const game_params *params, int tilesize,
                               int *x, int *y)
 {
     /* Ick: fake up `ds->tilesize' for macro expansion purposes */
-    struct { int tilesize, order; } ads, *ds = &ads;
+    struct { int tilesize, order, mode; } ads, *ds = &ads;
     ads.tilesize = tilesize;
     ads.order = params->order;
+    ads.mode = params->mode;
 
     *x = *y = DRAW_SIZE;
 }
