@@ -2153,6 +2153,23 @@ static void draw_furniture(drawing *dr, game_drawstate *ds,
         draw_gts(dr, ds, ox, oy, f, COL_BACKGROUND, COL_TEXT);
 }
 
+static void draw_dot(drawing *dr, game_drawstate *ds,
+                           const game_state *state, const game_ui *ui,
+                           int x, int y, bool hflash)
+{
+    int ox = COORD(x), oy = COORD(y), bg;
+    bool hon;
+    unsigned int f = GRID(state, flags, x, y);
+
+    bg = hflash ? COL_HIGHLIGHT : COL_BACKGROUND;
+
+    hon = (ui->hshow && x == ui->hx && y == ui->hy);
+
+    /* Draw the adjacent clue signs. */
+    if (ds->mode == MODE_KROPKI)
+        draw_krps(dr, ds, ox, oy, f, COL_BACKGROUND, COL_BLACK, COL_WHITE);
+}
+
 static void draw_num(drawing *dr, game_drawstate *ds, int x, int y)
 {
     int ox = COORD(x), oy = COORD(y);
@@ -2268,6 +2285,11 @@ static void game_redraw(drawing *dr, game_drawstate *ds,
                 else
                     draw_hints(dr, ds, x, y);
             }
+        }
+    }
+    for (x = 0; x < ds->order; x++) {
+        for (y = 0; y < ds->order; y++) {
+            draw_dot(dr, ds, state, ui, x, y, hflash);
         }
     }
     ds->hx = ui->hx; ds->hy = ui->hy;
