@@ -139,7 +139,7 @@ static const struct game_params unequal_presets[] = {
     {  7, DIFF_SET,     0 },
     {  7, DIFF_SET,     1 },
     {  7, DIFF_EXTREME, 0 },
-    {  7, DIFF_SET,     2 }
+    {  6, DIFF_SET,     2 }
 };
 
 static bool game_fetch_preset(int i, char **name, game_params **params)
@@ -983,6 +983,8 @@ static bool gg_place_clue(game_state *state, int ccode, digit *latin, bool check
     assert(loc < state->order*state->order);
 
     if (which == 4) {           /* add number */
+        //if (state->mode == MODE_KROPKI) return true; // Never add number clue in Kropki
+        //if (state->mode == MODE_KROPKI) checkonly = true; // Never add number clue in Kropki
         if (state->nums[loc] != 0) {
 #ifdef STANDALONE_SOLVER
             if (state->nums[loc] != latin[loc]) {
@@ -1108,8 +1110,7 @@ int maxtries;
 #endif
 static int gg_solved;
 
-static int game_assemble(game_state *new, int *scratch, digit *latin,
-                         int difficulty)
+static int game_assemble(game_state *new, int *scratch, digit *latin, int difficulty)
 {
     game_state *copy = dup_game(new);
     int best;
@@ -1149,9 +1150,9 @@ static int game_assemble(game_state *new, int *scratch, digit *latin,
     return 0;
 }
 
-static void game_strip(game_state *new, int *scratch, digit *latin,
-                       int difficulty)
+static void game_strip(game_state *new, int *scratch, digit *latin, int difficulty)
 {
+    //return;
     int o = new->order, o2 = o*o, lscratch = o2*5, i;
     game_state *copy = blank_game(new->order, new->mode);
 
@@ -1184,7 +1185,6 @@ static void game_strip(game_state *new, int *scratch, digit *latin,
     }
 #endif
 }
-
 static void add_kropki_flags(game_state *state, digit *latin, random_state *rs)
 {
     int x, y, o = state->order;
@@ -1286,8 +1286,8 @@ generate:
     sq = latin_generate(params->order, rs);
     latin_debug(sq, params->order);
     /* Separately shuffle the numeric and inequality clues */
-    shuffle(scratch, lscratch/5, sizeof(int), rs);
-    shuffle(scratch+lscratch/5, 4*lscratch/5, sizeof(int), rs);
+    //shuffle(scratch, lscratch/5, sizeof(int), rs);
+    //shuffle(scratch+lscratch/5, 4*lscratch/5, sizeof(int), rs);
 
     memset(state->nums, 0, o2 * sizeof(digit));
     memset(state->flags, 0, o2 * sizeof(unsigned int));
@@ -1305,6 +1305,11 @@ generate:
     if (game_assemble(state, scratch, sq, params->diff) < 0)
         goto generate;
     game_strip(state, scratch, sq, params->diff);
+
+    if(state->mode == MODE_KROPKI) {
+        memset(state->nums, 0, o2 * sizeof(digit));
+        //state->nums[loc] = 0;
+    }
 
     if (params->diff > 0) {
         game_state *copy = dup_game(state);
