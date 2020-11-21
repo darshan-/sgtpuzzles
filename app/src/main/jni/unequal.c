@@ -2153,21 +2153,25 @@ static void draw_furniture(drawing *dr, game_drawstate *ds,
         draw_gts(dr, ds, ox, oy, f, COL_BACKGROUND, COL_TEXT);
 }
 
+static void draw_outline(drawing *dr, game_drawstate *ds,
+                           const game_state *state, const game_ui *ui,
+                           int x, int y, bool hflash)
+{
+    int ox = COORD(x), oy = COORD(y);
+    unsigned int f = GRID(state, flags, x, y);
+
+    draw_rect_outline(dr, ox, oy, TILE_SIZE, TILE_SIZE, COL_GRID);
+}
+
+// Okay, so draw_dot somehow messes up gride lines *and* highlight.  Almost there, hopefully.
 static void draw_dot(drawing *dr, game_drawstate *ds,
                            const game_state *state, const game_ui *ui,
                            int x, int y, bool hflash)
 {
-    int ox = COORD(x), oy = COORD(y), bg;
-    bool hon;
+    int ox = COORD(x), oy = COORD(y);
     unsigned int f = GRID(state, flags, x, y);
 
-    bg = hflash ? COL_HIGHLIGHT : COL_BACKGROUND;
-
-    hon = (ui->hshow && x == ui->hx && y == ui->hy);
-
-    /* Draw the adjacent clue signs. */
-    if (ds->mode == MODE_KROPKI)
-        draw_krps(dr, ds, ox, oy, f, COL_BACKGROUND, COL_BLACK, COL_WHITE);
+    draw_krps(dr, ds, ox, oy, f, COL_BACKGROUND, COL_BLACK, COL_WHITE);
 }
 
 static void draw_num(drawing *dr, game_drawstate *ds, int x, int y)
@@ -2287,11 +2291,21 @@ static void game_redraw(drawing *dr, game_drawstate *ds,
             }
         }
     }
-    for (x = 0; x < ds->order; x++) {
-        for (y = 0; y < ds->order; y++) {
-            draw_dot(dr, ds, state, ui, x, y, hflash);
+
+    if (ds->mode == MODE_KROPKI) {
+        for (x = 0; x < ds->order; x++) {
+            for (y = 0; y < ds->order; y++) {
+                draw_outline(dr, ds, state, ui, x, y, hflash);
+            }
+        }
+
+        for (x = 0; x < ds->order; x++) {
+            for (y = 0; y < ds->order; y++) {
+                draw_dot(dr, ds, state, ui, x, y, hflash);
+            }
         }
     }
+
     ds->hx = ui->hx; ds->hy = ui->hy;
     ds->hshow = ui->hshow;
     ds->hpencil = ui->hpencil;
