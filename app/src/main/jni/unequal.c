@@ -2088,10 +2088,10 @@ static void draw_krps(drawing *dr, game_drawstate *ds, int ox, int oy,
             draw_circle(dr, ox+TILE_SIZE+g2, oy+TILE_SIZE/2, g4, 
                  COLOUR2(RIGHT), COLOUR(RIGHT));
         } else {
-            draw_rect(dr, ox+TILE_SIZE+g38, oy, g4, TILE_SIZE, COL_ERROR);
+            //draw_rect(dr, ox+TILE_SIZE+g38, oy, g4, TILE_SIZE, COL_ERROR);
         }    
     } else if (bg >= 0) {
-        draw_rect(dr, ox+TILE_SIZE+g38, oy, g4, TILE_SIZE, bg);
+        //draw_rect(dr, ox+TILE_SIZE+g38, oy, g4, TILE_SIZE, bg);
     }
     draw_update(dr, ox+TILE_SIZE, oy, g, TILE_SIZE);
 
@@ -2103,10 +2103,10 @@ static void draw_krps(drawing *dr, game_drawstate *ds, int ox, int oy,
             draw_circle(dr, ox+TILE_SIZE/2, oy+TILE_SIZE+g2, g4, 
                  COLOUR2(DOWN), COLOUR(DOWN));
         } else {
-            draw_rect(dr, ox, oy+TILE_SIZE+g38, TILE_SIZE, g4, COL_ERROR);
+            //draw_rect(dr, ox, oy+TILE_SIZE+g38, TILE_SIZE, g4, COL_ERROR);
         }
     } else if (bg >= 0) {
-        draw_rect(dr, ox, oy+TILE_SIZE+g38, TILE_SIZE, g4, bg);
+        //draw_rect(dr, ox, oy+TILE_SIZE+g38, TILE_SIZE, g4, bg);
     }
     draw_update(dr, ox, oy+TILE_SIZE, TILE_SIZE, g);
 }
